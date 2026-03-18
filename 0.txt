@@ -1,466 +1,294 @@
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>社交情境模擬器 - 趣味挑戰版</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
-    <style>
-        .emotion-btn {
-            transition: all 0.2s;
-        }
-        .emotion-btn:active {
-            transform: scale(0.9);
-        }
-        .selected {
-            outline: 5px solid #3b82f6;
-            transform: scale(1.05);
-            background-color: #dbeafe !important;
-            box-shadow: 0 10px 15px -3px rgba(59, 130, 246, 0.3);
-        }
-        .scenario-image-container {
-            height: 55vh;
-            background-color: #f3f4f6;
-            border-radius: 1.5rem;
-            overflow: hidden;
-            position: relative;
-            box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);
-        }
-        .scenario-image-content {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-        @keyframes bounce-subtle {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-5px); }
-        }
-        .badge-anim {
-            animation: bounce-subtle 2s infinite ease-in-out;
-        }
-        .sparkle-btn {
-            background: linear-gradient(45deg, #3b82f6, #8b5cf6);
-            color: white;
-        }
-        .hide-scrollbar::-webkit-scrollbar {
-            display: none;
-        }
-        .hide-scrollbar {
-            -ms-overflow-style: none;
-            scrollbar-width: none;
-        }
-        .score-pop {
-            animation: scorePop 0.5s ease-out forwards;
-        }
-        @keyframes scorePop {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.5); color: #f59e0b; }
-            100% { transform: scale(1); }
-        }
-    </style>
-</head>
-<body class="bg-indigo-50 h-screen overflow-hidden font-sans">
+import React, { useState, useEffect } from 'react';
+import { Sparkles, Image as ImageIcon, MessageSquare, CheckCircle2, RefreshCw, ChevronRight, Eye, EyeOff } from 'lucide-react';
 
-    <div class="h-full flex flex-col">
-        <!-- 頂部標題與積分區 -->
-        <header class="bg-indigo-600 p-2 text-white flex justify-between items-center px-6 shadow-lg shrink-0">
-            <div class="flex items-center gap-3">
-                <span class="text-2xl">🏆</span>
-                <h1 class="text-xl font-bold tracking-wider">社交冒險王</h1>
-            </div>
-            <div class="flex items-center gap-6">
-                <div id="badge-display" class="flex gap-2">
-                    <!-- 勳章顯示區 -->
-                </div>
-                <div class="bg-indigo-800 px-4 py-1 rounded-full flex items-center gap-2 border border-indigo-400">
-                    <span class="text-yellow-400 text-xl">⭐</span>
-                    <span id="total-score" class="font-black text-xl">0</span>
-                </div>
-            </div>
-        </header>
+// 環境變數與配置
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'edu-comm-train';
+const apiKey = ""; // API Key 由執行環境自動注入
 
-        <!-- 主內容區 -->
-        <main class="flex-1 flex flex-col md:flex-row overflow-hidden">
-            
-            <!-- 左側：情境顯示區 -->
-            <section class="w-full md:w-1/2 p-4 flex flex-col border-b md:border-b-0 md:border-r border-indigo-100 bg-white overflow-hidden shadow-inner">
-                <div class="flex justify-between items-center mb-2 shrink-0">
-                    <h2 class="text-lg font-bold text-indigo-900 flex items-center">
-                        <span class="mr-2">📍</span>任務地點
-                    </h2>
-                    <div class="flex items-center gap-2">
-                         <button onclick="speakScenario()" class="p-2 bg-indigo-50 rounded-full hover:bg-indigo-100 text-xl transition-colors" title="聽聽題目">🔊</button>
-                        <span id="scenario-counter" class="bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full text-md font-bold">1 / 20</span>
-                    </div>
-                </div>
-                
-                <!-- 圖片區 -->
-                <div id="image-container" class="scenario-image-container border-4 border-indigo-50 mb-3 shrink-0 group">
-                    <div id="image-loading" class="hidden absolute inset-0 bg-white bg-opacity-90 flex flex-col items-center justify-center z-10">
-                        <div class="animate-spin rounded-full h-12 w-12 border-b-4 border-indigo-600 mb-2"></div>
-                        <p class="text-indigo-600 font-bold italic">場景搭建中...</p>
-                    </div>
-                    <img id="scenario-img" src="" alt="情境插圖" class="scenario-image-content transition-transform duration-700 group-hover:scale-105">
-                </div>
+const App = () => {
+  const [currentIdx, setCurrentIdx] = useState(0);
+  const [questions, setQuestions] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [showAnswer, setShowAnswer] = useState(false);
+  const [generatedImg, setGeneratedImg] = useState(null);
+  const [errorMessage, setErrorMessage] = useState("");
 
-                <!-- 文字敘述欄 -->
-                <div class="bg-amber-50 px-5 py-3 rounded-2xl border-4 border-amber-200 shadow-sm h-fit shrink-0 mb-3 flex items-center justify-center relative">
-                    <div class="absolute -top-3 -left-2 bg-amber-400 text-white text-xs px-2 py-0.5 rounded-md font-bold">情境內容</div>
-                    <p id="scenario-text" class="text-2xl font-extrabold text-gray-800 text-center leading-tight">
-                        載入中...
-                    </p>
-                </div>
+  // 初始題庫 (保持 30 題邏輯)
+  const initialData = [
+    { title: "公園溜滑梯", scenario: "小明在公園看到一個小朋友跌倒了，他正在哭。", prompts: ["你在圖片中看到了什麼？", "你覺得跌倒的小朋友現在心情怎麼樣？"], answer: "我看到一個小朋友在溜滑梯旁邊跌倒哭了，小明站在旁邊關心他。小朋友現在感覺很痛、很難過。" },
+    { title: "分享玩具", scenario: "小華手裡拿著兩台小汽車，他把其中一台遞給了沒有玩具的小強。", prompts: ["小華正在對小強做什麼動作？", "如果你是小強，你會對小華說什麼？"], answer: "小華正在分享玩具給小強。如果我是小強，我會說：謝謝你跟我一起玩！" },
+    { title: "教室整理", scenario: "下課鐘聲響了，老師請大家把書包整理好，座位上的垃圾撿乾淨。", prompts: ["圖片中的小朋友正在做什麼？", "保持教室整潔有什麼好處？"], answer: "小朋友正在收拾書包和撿垃圾。保持整潔會讓教室變得很舒服，大家更有精神上課。" },
+    { title: "過馬路", scenario: "小美牽著媽媽的手，在紅綠燈前面等綠燈亮起再走。", prompts: ["小美為什麼要停下來？", "過馬路時要注意什麼？"], answer: "因為現在是紅燈。過馬路要牽好大人的手，走斑馬線，並且要注意左右來車。" },
+    { title: "超市購物", scenario: "大班在超市裡想買餅乾，他先問爸爸：『我可以買這包嗎？』", prompts: ["大班想要買什麼？", "他為什麼要先問爸爸？"], answer: "大班想買餅乾。先詢問長輩是禮貌的表現，也要看家裡的規矩是否允許。" },
+    { title: "圖書館安靜", scenario: "在圖書館裡，大家都安靜看書，小強講話很大聲，大家都轉頭看他。", prompts: ["圖書館裡應該要保持什麼狀態？", "為什麼大家要轉頭看小強？"], answer: "圖書館應該保持安靜。因為小強說話太吵，影響到別人看書了。" },
+    { title: "幫忙家事", scenario: "小莉幫媽媽把洗好的衣服一件一件掛到架子上。", prompts: ["小莉在幫忙做什麼？", "幫忙做家事後，媽媽會有什麼感覺？"], answer: "小莉在幫忙晾衣服。媽媽會覺得很開心、很欣慰，覺得小莉長大了。" },
+    { title: "生病看醫生", scenario: "小明在診間外面坐著，護理師叫到他的名字，他勇敢地走進去。", prompts: ["小明在哪裡？", "如果你害怕看醫生，你可以怎麼做？"], answer: "小明在醫院診間。可以深呼吸，或是帶著心愛的玩偶給自己力量。" },
+    { title: "餐前洗手", scenario: "吃飯時間到了，小杰在洗手台用肥皂仔細搓手。", prompts: ["小杰正在做什麼？", "為什麼吃飯前要洗手？"], answer: "小杰在洗手。洗手可以洗掉細菌，才不會把髒東西吃到肚子裡生病。" },
+    { title: "排隊上車", scenario: "校車來了，小朋友一個接一個排好隊，沒有推擠。", prompts: ["小朋友是怎麼上車的？", "如果不排隊會發生什麼事？"], answer: "小朋友在排隊上車。不排隊可能會跌倒，或者讓大家花更多時間上車。" },
+    { title: "垃圾分類", scenario: "小美把喝完的寶特瓶放進回收桶，而不是丟進一般垃圾。", prompts: ["小美做了什麼正確的事？", "資源回收對地球有什麼好處？"], answer: "小美做了資源回收。這樣可以減少垃圾，讓環境變得更乾淨。" },
+    { title: "借用文具", scenario: "小華忘記帶鉛筆，他輕輕拍隔壁同學的肩膀問：『請問可以借我筆嗎？』", prompts: ["小華需要幫忙什麼？", "借東西時要具備什麼禮貌？"], answer: "小華需要借鉛筆。要先詢問對方，得到允許後才能拿，用完要記得歸還並說謝謝。" },
+    { title: "安慰朋友", scenario: "小強的玩具壞了很難過，小明走過去拍拍他的背說：『別傷心。』", prompts: ["小強的心情怎麼了？", "如果你看到朋友難過，你會怎麼做？"], answer: "小強很難過。我可以安慰他，或是陪他一起想辦法修好玩具。" },
+    { title: "地震演練", scenario: "老師吹哨子，學生立刻躲在桌子下面，雙手保護頭部。", prompts: ["學生為什麼躲在桌下？", "保護頭部的原因是什麼？"], answer: "因為在進行地震演練。保護頭部是為了防止被掉落物砸傷。" },
+    { title: "雨天撐傘", scenario: "外面下雨了，小莉和同學共撐一把傘，一起走回教室。", prompts: ["天氣怎麼了？", "小莉和同學共撐一把傘，你覺得他們關係如何？"], answer: "外面正在下雨。他們關係很好，懂得互相照顧和分享空間。" },
+    { title: "禮貌打招呼", scenario: "在走廊遇到校長，小明停下腳步說：『校長好！』", prompts: ["小明遇到誰了？", "跟老師或長輩打招呼有什麼感覺？"], answer: "小明遇到了校長。打招呼會讓對方覺得你很有禮貌，也會讓氣氛變愉快。" },
+    { title: "流鼻涕處理", scenario: "小杰感冒流鼻涕，他拿衛生紙輕輕擦掉，並丟進垃圾桶。", prompts: ["小杰流鼻涕了該怎麼辦？", "衛生紙用完後要丟在哪裡？"], answer: "要用衛生紙擦乾淨。用完的衛生紙要丟進垃圾桶，不能亂丟。" },
+    { title: "跌倒擦藥", scenario: "小華膝蓋破皮了，護理老師幫他消毒傷口，小華忍著痛沒哭。", prompts: ["小華怎麼了？", "你覺得小華表現得怎麼樣？"], answer: "小華膝蓋受傷在擦藥。小華表現得很勇敢，雖然痛但能配合處理傷口。" },
+    { title: "餐廳吃飯", scenario: "全家人在餐廳用餐，小明安靜坐著吃東西，沒有跑來跑去。", prompts: ["小明在哪裡吃東西？", "在餐廳跑來跑去會有什麼危險？"], answer: "小明在餐廳。跑來跑去可能會撞到服務生，導致熱湯灑出來或是自己跌倒。" },
+    { title: "睡前刷牙", scenario: "睡覺時間到了，小杰對著鏡子練習刷每一顆牙齒。", prompts: ["小杰在做什麼？", "如果不刷牙，牙齒會發生什麼事？"], answer: "小杰在刷牙。不刷牙會長蛀牙，牙齒會變得很痛。" },
+    { title: "看到長輩讓座", scenario: "公車上有一位老奶奶站著，小強站起來說：『奶奶請坐。』", prompts: ["小強做了什麼事？", "你覺得老奶奶會有什麼感覺？"], answer: "小強主動讓座。老奶奶會覺得很感動，覺得小強是個貼心的孩子。" },
+    { title: "準時進教室", scenario: "上課鈴聲響了，小朋友立刻放下球，跑回教室坐好。", prompts: ["鈴聲響了代表什麼？", "為什麼要準時進教室？"], answer: "代表要上課了。準時進教室才能學到完整的知識，也是尊重老師的表現。" },
+    { title: "整理玩具區", scenario: "遊戲時間結束，小朋友把積木放回箱子，把家家酒玩具收好。", prompts: ["小朋友在做什麼？", "收好玩具下次玩的時候會有什麼方便？"], answer: "小朋友在收玩具。收好後下次就很容易找到想玩的玩具，地板也比較安全。" },
+    { title: "發現遺失物", scenario: "小莉在操場撿到一個錢包，她立刻交給學務處的老師。", prompts: ["小莉撿到了什麼？", "撿到別人的東西應該怎麼處理？"], answer: "小莉撿到了錢包。應該交給老師或警察，不能佔為己有。" },
+    { title: "吃飯不挑食", scenario: "營養午餐有青菜，小明雖然不喜歡，但還是把它吃光了。", prompts: ["小明吃了什麼？", "多吃蔬菜對身體有什麼好處？"], answer: "小明吃了他不喜歡的青菜。多吃蔬菜可以幫助消化，讓身體長高長壯。" },
+    { title: "搭乘電梯", scenario: "電梯門開了，小華讓裡面的人先走出來，自己再走進去。", prompts: ["搭電梯的禮節是什麼？", "為什麼要先讓裡面的人出來？"], answer: "先下後上。這樣才不會擠在門口，動線會比較順暢。" },
+    { title: "小聲說悄悄話", scenario: "小莉想跟小美分享祕密，她靠在小美耳邊小聲說話。", prompts: ["小莉在做什麼？", "為什麼說祕密要小聲？"], answer: "小莉在說悄悄話。因為不希望被其他不相關的人聽到。" },
+    { title: "練習綁鞋帶", scenario: "小強低頭努力練習把鞋帶綁成一個蝴蝶結。", prompts: ["小強在練習什麼技能？", "綁好鞋帶對走路有什麼幫助？"], answer: "小強在練習綁鞋帶。綁好鞋帶才不會踩到絆倒，走路更安全。" },
+    { title: "愛護小動物", scenario: "校園裡有一隻小貓，小明輕輕看著它，沒有動手去嚇它。", prompts: ["小明看到了什麼？", "我們應該如何對待小動物？"], answer: "小明看到了小貓。我們應該愛護動物，保持適當距離觀查，不要隨意驚嚇它們。" },
+    { title: "祝朋友生日快樂", scenario: "今天是小華的生日，小明送他一張自己畫的卡片。", prompts: ["今天是什麼日子？", "收到朋友送的卡片會有什麼心情？"], answer: "今天是小華的生日。收到卡片會覺得很開心、感覺自己被在乎。" }
+  ];
 
-                <!-- 按鈕導航區 -->
-                <div class="flex flex-wrap gap-3 justify-center shrink-0 mb-1">
-                    <button onclick="prevScenario()" class="px-6 py-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-xl text-md font-bold transition-all active:scale-95">上一個</button>
-                    <button onclick="nextScenario()" class="px-6 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-xl text-md font-bold transition-all shadow-md active:scale-95">換個任務</button>
-                    <button onclick="generateAIScenario()" class="px-6 py-2 sparkle-btn rounded-xl text-md font-bold transition-all shadow-lg active:scale-95">✨ AI 新任務</button>
-                </div>
+  useEffect(() => {
+    setQuestions(initialData);
+    generateImage(initialData[0].scenario);
+  }, []);
+
+  const fetchWithRetry = async (url, options, retries = 5, backoff = 1000) => {
+    try {
+      const response = await fetch(url, options);
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errText}`);
+      }
+      return await response.json();
+    } catch (error) {
+      if (retries > 0) {
+        await new Promise(resolve => setTimeout(resolve, backoff));
+        return fetchWithRetry(url, options, retries - 1, backoff * 2);
+      }
+      throw error;
+    }
+  };
+
+  const generateImage = async (promptText) => {
+    setLoading(true);
+    setErrorMessage("");
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`;
+      // 加入 no text 指令以避免生成任何標題
+      const payload = {
+        instances: [{ prompt: `Educational cartoon for kids, simple and clean illustration, NO TEXT in image, NO LABELS: ${promptText}` }],
+        parameters: { sampleCount: 1 }
+      };
+
+      const result = await fetchWithRetry(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (result.predictions?.[0]?.bytesBase64Encoded) {
+        setGeneratedImg(`data:image/png;base64,${result.predictions[0].bytesBase64Encoded}`);
+      }
+    } catch (error) {
+      console.error("圖片生成失敗:", error);
+      setErrorMessage("圖片載入失敗，請點擊「下一題」或重新整理。");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAiGenerate = async () => {
+    setLoading(true);
+    setErrorMessage("");
+    
+    const systemPrompt = `你是一位資深的國小特教老師，設計教材時嚴格遵守 JSON 格式。請勿在場景描述中包含任何答案字眼。`;
+    const topics = ["交通安全", "垃圾分類", "禮讓行為", "幫助他人", "環境衛生", "學校生活"];
+    const randomTopic = topics[Math.floor(Math.random() * topics.length)];
+    const userPrompt = `設計一個關於「${randomTopic}」的教材。`;
+
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+      
+      const payload = {
+        contents: [{ parts: [{ text: userPrompt }] }],
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        generationConfig: { 
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: "OBJECT",
+            properties: {
+              title: { type: "STRING" },
+              scenario: { type: "STRING" },
+              prompts: { type: "ARRAY", items: { type: "STRING" }, minItems: 2, maxItems: 2 },
+              answer: { type: "STRING" }
+            },
+            required: ["title", "scenario", "prompts", "answer"]
+          }
+        }
+      };
+
+      const result = await fetchWithRetry(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (text) {
+        const newQuestion = JSON.parse(text);
+        setQuestions(prev => [newQuestion, ...prev]);
+        setCurrentIdx(0);
+        setShowAnswer(false);
+        await generateImage(newQuestion.scenario);
+      }
+    } catch (error) {
+      setErrorMessage("AI 生成忙碌中，已切換至預設題庫。");
+      const randomFallback = initialData[Math.floor(Math.random() * initialData.length)];
+      setQuestions(prev => [{...randomFallback, title: `${randomFallback.title} (複習)`}, ...prev]);
+      setCurrentIdx(0);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const currentQ = questions[currentIdx];
+
+  const nextQuestion = () => {
+    const nextIdx = (currentIdx + 1) % questions.length;
+    setCurrentIdx(nextIdx);
+    setShowAnswer(false);
+    generateImage(questions[nextIdx].scenario);
+  };
+
+  if (!currentQ) return <div className="h-screen flex items-center justify-center font-bold text-indigo-600">正在準備教材...</div>;
+
+  return (
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-800 pb-10">
+      <header className="bg-indigo-600 text-white p-6 shadow-xl flex justify-between items-center sticky top-0 z-20">
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <MessageSquare className="w-8 h-8" />
+            溝通訓練互動教材網
+          </h1>
+          <p className="text-indigo-100 text-sm opacity-90">情境觀察 · 語言表達 · 社交技巧</p>
+        </div>
+        <button 
+          onClick={handleAiGenerate}
+          disabled={loading}
+          className="bg-yellow-400 hover:bg-yellow-500 text-indigo-900 px-6 py-3 rounded-2xl font-bold flex items-center gap-2 transition-all shadow-lg active:scale-95 disabled:opacity-50"
+        >
+          {loading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
+          AI 無限生成新題
+        </button>
+      </header>
+
+      <main className="max-w-6xl mx-auto mt-8 px-4">
+        {errorMessage && (
+          <div className="mb-4 p-3 bg-red-100 border border-red-200 text-red-700 rounded-xl text-sm flex items-center gap-2">
+            <span className="bg-red-500 text-white w-5 h-5 rounded-full flex items-center justify-center text-xs">!</span>
+            {errorMessage}
+          </div>
+        )}
+
+        <div className="mb-6 flex items-center justify-between bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
+          <div className="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden">
+            <div className="h-full bg-indigo-500 transition-all duration-700" style={{ width: `${((currentIdx + 1) / questions.length) * 100}%` }}></div>
+          </div>
+          <span className="ml-6 font-bold text-indigo-600 text-sm whitespace-nowrap">第 {currentIdx + 1} / {questions.length} 題</span>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          {/* 左側：圖片區 (已刪除圖片內部的描述文字標籤) */}
+          <div className="lg:col-span-7">
+            <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 h-full flex flex-col">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-bold text-indigo-700 flex items-center gap-2">
+                  <ImageIcon className="w-6 h-6" />
+                  情境圖片
+                </h2>
+              </div>
+              
+              <div className="flex-1 w-full bg-slate-50 rounded-2xl overflow-hidden relative border border-slate-100 flex items-center justify-center min-h-[550px]">
+                {loading ? (
+                  <div className="flex flex-col items-center gap-3">
+                    <RefreshCw className="w-12 h-12 text-indigo-500 animate-spin" />
+                    <span className="text-indigo-400 font-medium animate-pulse text-lg">正在準備圖片...</span>
+                  </div>
+                ) : generatedImg ? (
+                  <img src={generatedImg} alt="情境圖" className="w-full h-full object-contain" />
+                ) : (
+                  <div className="text-slate-300 flex flex-col items-center">
+                    <ImageIcon className="w-20 h-20 mb-2 opacity-10" />
+                    <p>圖片無法顯示</p>
+                  </div>
+                )}
+              </div>
+            </section>
+          </div>
+
+          {/* 右側：互動區 */}
+          <div className="lg:col-span-5 space-y-6 flex flex-col">
+            <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+              <h2 className="text-lg font-bold text-emerald-700 mb-4 flex items-center gap-2">
+                <CheckCircle2 className="w-6 h-6" />
+                看圖說說看
+              </h2>
+              <div className="space-y-4">
+                {currentQ.prompts.map((prompt, idx) => (
+                  <div key={idx} className="bg-emerald-50/70 p-5 rounded-2xl border border-emerald-100 relative group">
+                    <div className="absolute -left-2 top-4 w-7 h-7 bg-emerald-500 text-white rounded-full flex items-center justify-center text-xs font-bold shadow-md">{idx + 1}</div>
+                    <p className="text-slate-800 text-lg font-semibold pl-6">{prompt}</p>
+                  </div>
+                ))}
+              </div>
             </section>
 
-            <!-- 右側：挑戰互動區 -->
-            <section class="w-full md:w-1/2 p-4 flex flex-col space-y-4 overflow-y-auto hide-scrollbar bg-indigo-50/50">
-                
-                <!-- 心情探索區 -->
-                <div class="bg-white p-4 rounded-3xl shadow-sm border border-indigo-100 shrink-0">
-                    <div class="space-y-4">
-                        <div>
-                            <h3 class="text-lg font-black text-indigo-800 flex items-center mb-3">
-                                <span class="bg-indigo-100 p-1.5 rounded-lg mr-2 text-xl">🧘</span> 我的心情？
-                            </h3>
-                            <div id="my-emotions" class="grid grid-cols-3 sm:grid-cols-6 gap-2"></div>
-                        </div>
-
-                        <div class="pt-2 border-t border-indigo-50">
-                            <h3 class="text-lg font-black text-emerald-800 flex items-center mb-3">
-                                <span class="bg-emerald-100 p-1.5 rounded-lg mr-2 text-xl">🤝</span> 他人的心情？
-                            </h3>
-                            <div id="others-emotions" class="grid grid-cols-3 sm:grid-cols-6 gap-2"></div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 處遇挑戰區 -->
-                <div class="bg-white p-4 rounded-3xl shadow-sm border border-indigo-100 flex-1 flex flex-col min-h-[300px]">
-                    <h3 class="text-lg font-black text-gray-800 flex items-center mb-4">
-                        <span class="bg-orange-100 p-1.5 rounded-lg mr-2 text-xl">⚔️</span> 選擇你的絕招！
-                    </h3>
-                    <div id="actions-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-3 flex-1">
-                        <!-- JS 填充 -->
-                    </div>
-                </div>
-
-                <!-- 結果與回饋 -->
-                <div id="feedback-area" class="hidden fade-in p-5 rounded-3xl border-4 text-center space-y-4 shrink-0 shadow-xl">
-                    <div id="result-emoji" class="text-5xl mb-1"></div>
-                    <p id="feedback-text" class="text-xl font-black text-gray-800"></p>
-                    
-                    <div class="flex flex-col gap-3">
-                        <div class="flex justify-center gap-4">
-                            <button id="ai-suggestion-btn" onclick="getAISuggestion()" class="px-8 py-3 bg-white border-2 border-purple-400 text-purple-700 rounded-2xl text-lg font-black hover:bg-purple-50 transition shadow-md flex items-center gap-2 active:scale-95">
-                                🔮 AI 智慧錦囊
-                            </button>
-                            <button onclick="resetSelection()" class="px-4 py-2 text-sm font-bold text-gray-500 hover:text-gray-700 bg-gray-100 rounded-xl transition active:scale-95">重選</button>
-                        </div>
-                        <div id="ai-response" class="hidden text-left bg-white/80 backdrop-blur p-4 rounded-2xl border-2 border-purple-200 text-gray-700 text-md leading-relaxed shadow-inner"></div>
-                    </div>
-                </div>
+            <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex-1">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-lg font-bold text-amber-600 flex items-center gap-2">
+                  <Eye className="w-6 h-6" />
+                  參考解答
+                </h2>
+                <button 
+                  onClick={() => setShowAnswer(!showAnswer)} 
+                  className={`text-sm px-3 py-1 rounded-full font-medium transition-colors ${showAnswer ? "bg-slate-100 text-slate-500" : "bg-amber-100 text-amber-700"}`}
+                >
+                  {showAnswer ? "隱藏" : "顯示"}
+                </button>
+              </div>
+              <div 
+                className={`p-6 rounded-2xl cursor-pointer min-h-[150px] flex items-center justify-center border-2 transition-all duration-300 ${
+                  showAnswer 
+                  ? "bg-amber-50 border-amber-200 shadow-inner" 
+                  : "bg-slate-50 border-dashed border-slate-200 hover:bg-slate-100"
+                }`}
+                onClick={() => setShowAnswer(true)}
+              >
+                {showAnswer ? (
+                  <p className="text-slate-800 font-medium text-lg leading-relaxed animate-in fade-in zoom-in-95 duration-300">
+                    {currentQ.answer}
+                  </p>
+                ) : (
+                  <div className="text-slate-400 flex flex-col items-center gap-3">
+                    <EyeOff className="w-10 h-10 opacity-10"/>
+                    <span className="font-bold text-lg">點擊揭曉參考答案</span>
+                  </div>
+                )}
+              </div>
             </section>
-        </main>
+
+            <button 
+              onClick={nextQuestion} 
+              disabled={loading}
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-5 rounded-3xl font-bold text-xl flex justify-center items-center gap-3 shadow-xl shadow-indigo-200 transition-all active:scale-95"
+            >
+              下一題 <ChevronRight className="w-7 h-7" />
+            </button>
+          </div>
+        </div>
+      </main>
     </div>
+  );
+};
 
-    <!-- 音效 (使用內建 Web Audio API 或靜音處理) -->
-    <script>
-        const apiKey = ""; 
-
-        let gameState = {
-            score: 0,
-            streak: 0,
-            badges: [],
-            aiConsults: 0
-        };
-
-        const scenarios = [
-            "玩具被同學搶走", "排隊時被後面的同學推了一下", "想玩球但同學不讓你加入", 
-            "午餐吃到不喜歡的菜", "上課想發言但老師沒叫到你", "考試成績不如預期", 
-            "同學不小心把水灑在你的課本上", "體育課分組沒有人找你一組", "被誤會弄壞了別人的東西",
-            "在走廊行走時被同學撞倒", "聽不懂老師上課講的內容", "想跟同學借彩色筆被拒絕",
-            "玩遊戲輸了心情很差", "下課時間想安靜卻有人在旁邊大叫", "同學在背後說你的話",
-            "媽媽忘記帶你最喜歡的點心", "不小心弄髒了剛穿好的衣服", "看電視正精彩時被叫去寫功課",
-            "在路上遇到不認識的狗對你叫", "要把喜歡的玩具分享給弟弟妹妹"
-        ];
-
-        const emotions = [
-            { name: "高興", emoji: "😊", color: "bg-green-50 border-green-200 text-green-600" },
-            { name: "生氣", emoji: "😡", color: "bg-red-50 border-red-200 text-red-600" },
-            { name: "難過", emoji: "😢", color: "bg-blue-50 border-blue-200 text-blue-600" },
-            { name: "害怕", emoji: "😨", color: "bg-purple-50 border-purple-200 text-purple-600" },
-            { name: "驚訝", emoji: "😮", color: "bg-yellow-50 border-yellow-200 text-yellow-600" },
-            { name: "冷靜", emoji: "😐", color: "bg-gray-50 border-gray-200 text-gray-600" }
-        ];
-
-        const actions = [
-            { text: "找老師尋求幫助", positive: true, score: 10, note: "讚！請求協助是很有智慧的決定。" },
-            { text: "自己先忍耐住情緒", positive: true, score: 15, note: "超強！你能控制自己的脾氣，是情緒小達人。" },
-            { text: "用說的告訴對方我的感受", positive: true, score: 20, note: "太棒了！精準表達是解決衝突最好的武器。" },
-            { text: "離開現場去冷靜", positive: true, score: 10, note: "明智！換個地方心情就會煥然一新。" },
-            { text: "大聲尖叫或是推人", positive: false, score: -5, note: "哎呀！這樣會讓局面變得更難收拾喔。" },
-            { text: "把東西摔在地上", positive: false, score: -5, note: "喔不！東西壞了問題還是在，試試別的招數？" }
-        ];
-
-        let currentIndex = 0;
-        let selectedMyEmotion = null;
-        let selectedOtherEmotion = null;
-        let selectedAction = null;
-
-        async function fetchWithRetry(url, options, retries = 5) {
-            for (let i = 0; i < retries; i++) {
-                try {
-                    const response = await fetch(url, options);
-                    if (response.ok) return await response.json();
-                    if (response.status === 429) {
-                        await new Promise(res => setTimeout(res, Math.pow(2, i) * 1000));
-                        continue;
-                    }
-                    throw new Error("API Failed");
-                } catch (e) {
-                    if (i === retries - 1) throw e;
-                    await new Promise(res => setTimeout(res, Math.pow(2, i) * 1000));
-                }
-            }
-        }
-
-        function updateScore(points) {
-            gameState.score = Math.max(0, gameState.score + points);
-            const scoreEl = document.getElementById('total-score');
-            scoreEl.innerText = gameState.score;
-            scoreEl.classList.remove('score-pop');
-            void scoreEl.offsetWidth; 
-            scoreEl.classList.add('score-pop');
-
-            // 檢查勳章
-            checkBadges();
-        }
-
-        function checkBadges() {
-            const badgeDisplay = document.getElementById('badge-display');
-            const newBadges = [];
-            if (gameState.score >= 50 && !gameState.badges.includes('初心者')) newBadges.push({icon:'🌱', name:'社交新星'});
-            if (gameState.streak >= 3 && !gameState.badges.includes('三連霸')) newBadges.push({icon:'🔥', name:'情緒穩如山'});
-            if (gameState.aiConsults >= 3 && !gameState.badges.includes('學者')) newBadges.push({icon:'🎓', name:'好學智慧王'});
-
-            newBadges.forEach(b => {
-                gameState.badges.push(b.name);
-                const span = document.createElement('span');
-                span.className = "bg-white/20 px-2 py-0.5 rounded-lg text-sm border border-white/30 badge-anim flex items-center gap-1";
-                span.innerHTML = `<span>${b.icon}</span> <span>${b.name}</span>`;
-                badgeDisplay.appendChild(span);
-                // 特效
-                confetti({ particleCount: 50, spread: 30, origin: { y: 0.1 } });
-            });
-        }
-
-        async function generateAIScenario() {
-            const btn = event.currentTarget;
-            btn.innerText = "生成中...";
-            btn.disabled = true;
-            try {
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
-                const result = await fetchWithRetry(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: [{ parts: [{ text: "給我一個小學生在學校可能遇到的社交難題。" }] }],
-                        systemInstruction: { parts: [{ text: "生成一個20字內的簡短社交練習情境。" }] }
-                    })
-                });
-                const newText = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-                if (newText) {
-                    scenarios.push(newText);
-                    currentIndex = scenarios.length - 1;
-                    updateUI();
-                }
-            } catch (e) { console.error(e); } finally {
-                btn.innerText = "✨ AI 新任務";
-                btn.disabled = false;
-            }
-        }
-
-        async function getAISuggestion() {
-            gameState.aiConsults++;
-            checkBadges();
-            const aiResDiv = document.getElementById('ai-response');
-            const aiBtn = document.getElementById('ai-suggestion-btn');
-            aiResDiv.classList.remove('hidden');
-            aiResDiv.innerHTML = "<div class='flex gap-2 items-center'>🔮 正在占卜最佳解答...</div>";
-            aiBtn.disabled = true;
-
-            const prompt = `情境：${scenarios[currentIndex]}。心情：${selectedMyEmotion}。我的應對方法：${selectedAction}。請像個冒險導師一樣，給我一個有趣且有用的挑戰建議，30字內。`;
-            try {
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
-                const result = await fetchWithRetry(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-                });
-                aiResDiv.innerHTML = `<strong>🔮 導師錦囊：</strong><br>${result.candidates[0].content.parts[0].text}`;
-            } catch (e) { aiResDiv.innerText = "魔法暫時失靈了。"; } finally { aiBtn.disabled = false; }
-        }
-
-        async function speakScenario() {
-            const text = document.getElementById('scenario-text').innerText;
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
-            try {
-                const response = await fetchWithRetry(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: [{ parts: [{ text: `Say playfully: ${text}` }] }],
-                        generationConfig: {
-                            responseModalities: ["AUDIO"],
-                            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Puck" } } }
-                        }
-                    })
-                });
-                const base64Audio = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
-                if (base64Audio) {
-                    const audioBlob = pcmToWav(base64Audio, 24000);
-                    const audio = new Audio(URL.createObjectURL(audioBlob));
-                    audio.play();
-                }
-            } catch (e) {
-                const msg = new SpeechSynthesisUtterance(text);
-                msg.lang = 'zh-TW';
-                window.speechSynthesis.speak(msg);
-            }
-        }
-
-        function pcmToWav(base64Data, sampleRate) {
-            const byteCharacters = atob(base64Data);
-            const buffer = new ArrayBuffer(44 + byteCharacters.length);
-            const view = new DataView(buffer);
-            const writeString = (o, s) => { for (let i=0; i<s.length; i++) view.setUint8(o+i, s.charCodeAt(i)); };
-            writeString(0, 'RIFF');
-            view.setUint32(4, 36 + byteCharacters.length, true);
-            writeString(8, 'WAVE');
-            writeString(12, 'fmt ');
-            view.setUint32(16, 16, true);
-            view.setUint16(20, 1, true);
-            view.setUint16(22, 1, true);
-            view.setUint32(24, sampleRate, true);
-            view.setUint32(28, sampleRate * 2, true);
-            view.setUint16(32, 2, true);
-            view.setUint16(34, 16, true);
-            writeString(36, 'data');
-            view.setUint32(40, byteCharacters.length, true);
-            for (let i=0; i<byteCharacters.length; i++) view.setUint8(44+i, byteCharacters.charCodeAt(i));
-            return new Blob([view], { type: 'audio/wav' });
-        }
-
-        async function generateScenarioImage(promptText) {
-            const loadingEl = document.getElementById('image-loading');
-            const imgEl = document.getElementById('scenario-img');
-            loadingEl.classList.remove('hidden');
-            imgEl.style.opacity = '0.2';
-            try {
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`;
-                const result = await fetchWithRetry(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        instances: { prompt: `Colorful storybook illustration of ${promptText}, expressive characters, clean background.` },
-                        parameters: { sampleCount: 1 }
-                    })
-                });
-                if (result.predictions?.[0]) imgEl.src = `data:image/png;base64,${result.predictions[0].bytesBase64Encoded}`;
-            } catch (error) { imgEl.src = `https://via.placeholder.com/800x600?text=Social+Adventure`; } finally {
-                loadingEl.classList.add('hidden');
-                imgEl.style.opacity = '1';
-            }
-        }
-
-        function updateUI() {
-            const text = scenarios[currentIndex];
-            document.getElementById('scenario-text').innerText = text;
-            document.getElementById('scenario-counter').innerText = `${currentIndex + 1} / ${scenarios.length}`;
-            resetSelection();
-            generateScenarioImage(text);
-        }
-
-        function renderEmotions() {
-            ['my-emotions', 'others-emotions'].forEach(id => {
-                const container = document.getElementById(id);
-                container.innerHTML = '';
-                emotions.forEach(emo => {
-                    const btn = document.createElement('button');
-                    btn.className = `emotion-btn border-2 p-1.5 rounded-2xl flex flex-col items-center shadow-sm ${emo.color} hover:shadow-md transition-all`;
-                    btn.innerHTML = `<span class="text-3xl mb-1">${emo.emoji}</span><span class="text-xs font-black uppercase">${emo.name}</span>`;
-                    btn.onclick = () => {
-                        Array.from(container.children).forEach(b => b.classList.remove('selected'));
-                        btn.classList.add('selected');
-                        if(id.startsWith('my')) selectedMyEmotion = emo.name; else selectedOtherEmotion = emo.name;
-                    };
-                    container.appendChild(btn);
-                });
-            });
-        }
-
-        function renderActions() {
-            const container = document.getElementById('actions-grid');
-            container.innerHTML = '';
-            actions.forEach(action => {
-                const btn = document.createElement('button');
-                btn.className = "action-btn text-left p-4 border-4 border-gray-100 rounded-2xl hover:bg-indigo-50 hover:border-indigo-200 transition-all text-lg font-black text-gray-700 shadow-sm flex items-center justify-between group";
-                btn.innerHTML = `<span>${action.text}</span> <span class="text-amber-400 opacity-0 group-hover:opacity-100 transition-opacity">★</span>`;
-                btn.onclick = () => {
-                    Array.from(container.children).forEach(b => b.classList.remove('selected', 'bg-indigo-50', 'border-indigo-400'));
-                    btn.classList.add('selected', 'bg-indigo-50', 'border-indigo-400');
-                    selectedAction = action.text;
-                    showFeedback(action);
-                };
-                container.appendChild(btn);
-            });
-        }
-
-        function showFeedback(action) {
-            const feedbackArea = document.getElementById('feedback-area');
-            const resultEmoji = document.getElementById('result-emoji');
-            feedbackArea.classList.remove('hidden');
-            document.getElementById('ai-response').classList.add('hidden');
-            
-            if (action.positive) {
-                resultEmoji.innerText = "🌈";
-                gameState.streak++;
-                updateScore(action.score);
-                confetti({
-                    particleCount: 100,
-                    spread: 70,
-                    origin: { y: 0.6 },
-                    colors: ['#3b82f6', '#10b981', '#f59e0b']
-                });
-            } else {
-                resultEmoji.innerText = "🌧️";
-                gameState.streak = 0;
-                updateScore(action.score);
-            }
-            
-            document.getElementById('feedback-text').innerText = action.note;
-            feedbackArea.className = `fade-in p-6 rounded-3xl border-4 text-center space-y-4 ${action.positive ? 'bg-green-50 border-green-300' : 'bg-red-50 border-red-300'}`;
-        }
-
-        function resetSelection() {
-            document.querySelectorAll('.emotion-btn, .action-btn').forEach(b => b.classList.remove('selected', 'bg-indigo-50', 'border-indigo-400'));
-            document.getElementById('feedback-area').classList.add('hidden');
-            document.getElementById('ai-response').classList.add('hidden');
-            selectedMyEmotion = null; selectedOtherEmotion = null; selectedAction = null;
-        }
-
-        function nextScenario() { currentIndex = (currentIndex + 1) % scenarios.length; updateUI(); }
-        function prevScenario() { currentIndex = (currentIndex - 1 + scenarios.length) % scenarios.length; updateUI(); }
-
-        window.onload = () => { renderEmotions(); renderActions(); updateUI(); };
-    </script>
-</body>
-</html>
+export default App;
